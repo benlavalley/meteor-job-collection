@@ -6,23 +6,23 @@
 
 if Meteor.isClient
 
-  # This is a polyfill for bind(), added to make phantomjs 1.9.7 work
+# This is a polyfill for bind(), added to make phantomjs 1.9.7 work
   unless Function.prototype.bind
     Function.prototype.bind = (oThis) ->
-       if typeof this isnt "function"
-          # closest thing possible to the ECMAScript 5 internal IsCallable function
-          throw new TypeError("Function.prototype.bind - what is trying to be bound is not callable")
+      if typeof this isnt "function"
+# closest thing possible to the ECMAScript 5 internal IsCallable function
+        throw new TypeError("Function.prototype.bind - what is trying to be bound is not callable")
 
-       aArgs = Array.prototype.slice.call arguments, 1
-       fToBind = this
-       fNOP = () ->
-       fBound = () ->
-          func = if (this instanceof fNOP and oThis) then this else oThis
-          return fToBind.apply(func, aArgs.concat(Array.prototype.slice.call(arguments)))
+      aArgs = Array.prototype.slice.call arguments, 1
+      fToBind = this
+      fNOP = () ->
+      fBound = () ->
+        func = if (this instanceof fNOP and oThis) then this else oThis
+        return fToBind.apply(func, aArgs.concat(Array.prototype.slice.call(arguments)))
 
-       fNOP.prototype = this.prototype
-       fBound.prototype = new fNOP()
-       return fBound
+      fNOP.prototype = this.prototype
+      fBound.prototype = new fNOP()
+      return fBound
 
   ################################################################
   ## job-collection client class
@@ -30,10 +30,7 @@ if Meteor.isClient
   class JobCollection extends share.JobCollectionBase
 
     constructor: (root = 'queue', options = {}) ->
-      unless @ instanceof JobCollection
-        return new JobCollection(root, options)
-
-      # Call super's constructor
+# Call super's constructor
       super root, options
 
       @logConsole = false

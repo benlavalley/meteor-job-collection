@@ -4,6 +4,8 @@
 #     See included LICENSE file for details.
 ############################################################################
 
+later = Npm.require 'later'
+
 _validNumGTEZero = (v) ->
   Match.test(v, Number) and v >= 0.0
 
@@ -33,11 +35,11 @@ _validId = (v) ->
 
 _validLog = () ->
   [{
-      time: Date
-      runId: Match.OneOf(Match.Where(_validId), null)
-      level: Match.Where(_validLogLevel)
-      message: String
-      data: Match.Optional Object
+    time: Date
+    runId: Match.OneOf(Match.Where(_validId), null)
+    level: Match.Where(_validLogLevel)
+    message: String
+    data: Match.Optional Object
   }]
 
 _validProgress = () ->
@@ -78,23 +80,22 @@ _validJobDoc = () ->
   repeatWait: Match.OneOf(Match.Where(_validIntGTEZero), Match.Where(_validLaterJSObj))
   created: Date
 
+_getAllProperties = (obj) ->
+  names = new Set()
+  properties = []
+  while obj
+    for name in Object.getOwnPropertyNames(obj) when name not in names
+      properties.push([name, obj[name]])
+      names.add(name)
+    obj = Object.getPrototypeOf(obj)
+  properties
+
 class JobCollectionBase extends Mongo.Collection
 
-  constructor: (@root = 'queue', options = {}) ->
-    unless @ instanceof JobCollectionBase
-      return new JobCollectionBase(@root, options)
-
-    unless @ instanceof Mongo.Collection
-      throw new Meteor.Error 'The global definition of Mongo.Collection has changed since the job-collection package was loaded. Please ensure that any packages that redefine Mongo.Collection are loaded before job-collection.'
-
-    unless Mongo.Collection is Mongo.Collection.prototype.constructor
-      throw new Meteor.Error 'The global definition of Mongo.Collection has been patched by another package, and the prototype constructor has been left in an inconsistent state. Please see this link for a workaround: https://github.com/vsivsi/meteor-file-sample-app/issues/2#issuecomment-120780592'
-
-    @later = later  # later object, for convenience
-
+  constructor: (root = 'queue', options = {}) ->
     options.noCollectionSuffix ?= false
 
-    collectionName = @root
+    collectionName = root
 
     unless options.noCollectionSuffix
       collectionName += '.jobs'
@@ -103,7 +104,20 @@ class JobCollectionBase extends Mongo.Collection
     # calling Mongo.Collection constructor
     delete options.noCollectionSuffix
 
-    Job.setDDP(options.connection, @root)
+    Job.setDDP(options.connection, root)
+
+    # Call super's constructor
+    super collectionName, options
+
+    unless @ instanceof Mongo.Collection
+      throw new Meteor.Error 'The global definition of Mongo.Collection has changed since the job-collection package was loaded. Please ensure that any packages that redefine Mongo.Collection are loaded before job-collection.'
+
+    unless Mongo.Collection is Mongo.Collection.prototype.constructor
+      throw new Meteor.Error 'The global definition of Mongo.Collection has been patched by another package, and the prototype constructor has been left in an inconsistent state. Please see this link for a workaround: https://github.com/vsivsi/meteor-file-sample-app/issues/2#issuecomment-120780592'
+
+    @root = root
+
+    @later = later  # later object, for convenience
 
     @_createLogEntry = (message = '', runId = null, level = 'info', time = new Date(), data = null) ->
       l = { time: time, runId: runId, message: message, level: level }
@@ -127,9 +141,6 @@ class JobCollectionBase extends Mongo.Collection
         msg = "Job Failed with#{if fatal then ' Fatal' else ''} Error#{if value? and typeof value is 'string' then ': ' + value else ''}."
         level = if fatal then 'danger' else 'warning'
         @_createLogEntry msg, runId, level).bind(@)
-
-    # Call super's constructor
-    super collectionName, options
 
   _validNumGTEZero: _validNumGTEZero
   _validNumGTZero: _validNumGTZero
@@ -174,22 +185,22 @@ class JobCollectionBase extends Mongo.Collection
   startJobServer: (params...) -> Job.startJobServer @root, params...
   shutdownJobServer: (params...) -> Job.shutdownJobServer @root, params...
 
-  # These are deprecated and will be removed
+# These are deprecated and will be removed
   startJobs: (params...) -> Job.startJobs @root, params...
   stopJobs: (params...) -> Job.stopJobs @root, params...
 
   jobDocPattern: _validJobDoc()
 
-  # Warning Stubs for server-only calls
+# Warning Stubs for server-only calls
   allow: () -> throw new Error "Server-only function jc.allow() invoked on client."
   deny: () -> throw new Error "Server-only function jc.deny() invoked on client."
   promote: () -> throw new Error "Server-only function jc.promote() invoked on client."
   setLogStream: () -> throw new Error "Server-only function jc.setLogStream() invoked on client."
 
-  # Warning Stubs for client-only calls
+# Warning Stubs for client-only calls
   logConsole: () -> throw new Error "Client-only function jc.logConsole() invoked on server."
 
-  # Deprecated. Remove in next major version
+# Deprecated. Remove in next major version
   makeJob: do () ->
     dep = false
     (params...) ->
@@ -198,7 +209,7 @@ class JobCollectionBase extends Mongo.Collection
         console.warn "WARNING: jc.makeJob() has been deprecated. Use new Job(jc, doc) instead."
       new Job @root, params...
 
-  # Deprecated. Remove in next major version
+# Deprecated. Remove in next major version
   createJob: do () ->
     dep = false
     (params...) ->
@@ -222,15 +233,15 @@ class JobCollectionBase extends Mongo.Collection
   _generateMethods: () ->
     methodsOut = {}
     methodPrefix = '_DDPMethod_'
-    for methodName, methodFunc of @ when methodName[0...methodPrefix.length] is methodPrefix
+    for [methodName, methodFunc] in _getAllProperties(@) when methodName[0...methodPrefix.length] is methodPrefix
       baseMethodName = methodName[methodPrefix.length..]
       methodsOut["#{@root}_#{baseMethodName}"] = @_methodWrapper(baseMethodName, methodFunc.bind(@))
     return methodsOut
 
   _idsOfDeps: (ids, antecedents, dependents, jobStatuses) ->
-    # Cancel the entire tree of antecedents and/or dependents
-    # Dependents: jobs that list one of the ids in their depends list
-    # Antecedents: jobs with an id listed in the depends list of one of the jobs in ids
+# Cancel the entire tree of antecedents and/or dependents
+# Dependents: jobs that list one of the ids in their depends list
+# Antecedents: jobs with an id listed in the depends list of one of the jobs in ids
     dependsQuery = []
     dependsIds = []
     if dependents
@@ -272,7 +283,7 @@ class JobCollectionBase extends Mongo.Collection
     return dependsIds
 
   _rerun_job: (doc, repeats = doc.repeats - 1, wait = doc.repeatWait, repeatUntil = doc.repeatUntil) ->
-    # Repeat? if so, make a new job from the old one
+# Repeat? if so, make a new job from the old one
     id = doc._id
     runId = doc.runId
     time = new Date()
@@ -576,8 +587,8 @@ class JobCollectionBase extends Mongo.Collection
             foundDocs = (@scrub d for d in foundDocs)
           check docs, [ _validJobDoc() ]
           docs = docs.concat foundDocs
-        # else
-        #   console.warn "getWork: find after update failed"
+    # else
+    #   console.warn "getWork: find after update failed"
     return docs
 
   _DDPMethod_jobRemove: (ids, options) ->
@@ -790,7 +801,8 @@ class JobCollectionBase extends Mongo.Collection
     if num > 0 or depsCancelled
       return true
     else
-      console.warn "jobCancel failed"
+      console.warn "jobCancel failed for collection #{@root} - ids #{ids}"
+    #throw new Error "jobCancel failed!" to trace why this is failing, enable this line...
     return false
 
   _DDPMethod_jobRestart: (ids, options) ->
@@ -850,7 +862,7 @@ class JobCollectionBase extends Mongo.Collection
       console.warn "jobRestart failed"
     return false
 
-  # Job creator methods
+# Job creator methods
 
   _DDPMethod_jobSave: (doc, options) ->
     check doc, _validJobDoc()
@@ -874,8 +886,8 @@ class JobCollectionBase extends Mongo.Collection
     # If doc.repeatWait is a later.js object, then don't run before
     # the first valid scheduled time that occurs after doc.after
     if @later? and typeof doc.repeatWait isnt 'number'
-      # Using a workaround to find next time after doc.after.
-      # See: https://github.com/vsivsi/meteor-job-collection/issues/217
+# Using a workaround to find next time after doc.after.
+# See: https://github.com/vsivsi/meteor-job-collection/issues/217
       schedule = @later?.schedule(doc.repeatWait)
       unless schedule and next = schedule.next(2, schedule.prev(1, doc.after))[1]
         console.warn "No valid available later.js times in schedule after #{doc.after}"
@@ -928,7 +940,7 @@ class JobCollectionBase extends Mongo.Collection
         return null
     else
       if doc.repeats is @forever and options.cancelRepeats
-        # If this is unlimited repeating job, then cancel any existing jobs of the same type
+# If this is unlimited repeating job, then cancel any existing jobs of the same type
         @find(
           {
             type: doc.type
@@ -948,7 +960,7 @@ class JobCollectionBase extends Mongo.Collection
       else
         return null
 
-  # Worker methods
+# Worker methods
 
   _DDPMethod_jobProgress: (id, runId, completed, total, options) ->
     check id, Match.Where(_validId)
@@ -1007,10 +1019,10 @@ class JobCollectionBase extends Mongo.Collection
     options ?= {}
     time = new Date()
     logObj =
-        time: time
-        runId: runId
-        level: options.level ? 'info'
-        message: message
+      time: time
+      runId: runId
+      level: options.level ? 'info'
+      message: message
     logObj.data = options.data if options.data?
 
     job = @findOne { _id: id }, { fields: { status: 1, workTimeout: 1 } }
@@ -1130,8 +1142,8 @@ class JobCollectionBase extends Mongo.Collection
           if doc.repeatUntil - doc.repeatWait >= time
             jobId = @_rerun_job doc
         else
-          # This code prevents a job that just ran and finished
-          # instantly from being immediately rerun on the same occurance
+# This code prevents a job that just ran and finished
+# instantly from being immediately rerun on the same occurance
           next = @later?.schedule(doc.repeatWait).next(2)
           if next and next.length > 0
             d = new Date(next[0])
@@ -1233,9 +1245,7 @@ class JobCollectionBase extends Mongo.Collection
       else
         new Date(time.valueOf() + doc.retryWait)  # 'constant'
 
-    newStatus = if (not options.fatal and
-                    doc.retries > 0 and
-                    doc.retryUntil >= after) then "waiting" else "failed"
+    newStatus = if (not options.fatal and doc.retries > 0 and doc.retryUntil >= after) then 'waiting' else 'failed'
 
     err.runId = runId  # Link each failure to the run that generated it.
 
@@ -1246,8 +1256,7 @@ class JobCollectionBase extends Mongo.Collection
         after: after
         updated: time
       $push:
-        failures:
-          err
+        failures: err
 
     if logObj = @_logMessage.failed runId, newStatus is 'failed', err
       mods.$push.log = logObj
@@ -1261,7 +1270,7 @@ class JobCollectionBase extends Mongo.Collection
       mods
     )
     if newStatus is "failed" and num is 1
-      # Cancel any dependent jobs too
+# Cancel any dependent jobs too
       @find(
         {
           depends:

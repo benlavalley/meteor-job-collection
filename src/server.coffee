@@ -20,10 +20,7 @@ if Meteor.isServer
   class JobCollection extends share.JobCollectionBase
 
     constructor: (root = 'queue', options = {}) ->
-      unless @ instanceof JobCollection
-        return new JobCollection(root, options)
-
-      # Call super's constructor
+# Call super's constructor
       super root, options
 
       @events = new eventEmitter()
@@ -43,7 +40,7 @@ if Meteor.isServer
       @stopped = true
 
       # No client mutators allowed
-      share.JobCollectionBase.__super__.deny.bind(@)
+      Meteor.Collection.prototype.deny.bind(@)
         update: () => true
         insert: () => true
         remove: () => true
@@ -63,7 +60,7 @@ if Meteor.isServer
       # If a connection option is given, then this JobCollection is actually hosted
       # remotely, so don't establish local and remotely callable server methods in that case
       unless options.connection?
-        # Default indexes, only when not remotely connected!
+# Default indexes, only when not remotely connected!
         @_ensureIndex { type : 1, status : 1 }
         @_ensureIndex { priority : 1, retryUntil : 1, after : 1 }
         @isSimulation = false
@@ -99,7 +96,7 @@ if Meteor.isServer
 
     _toLog: (userId, method, message) =>
       @logStream?.write "#{new Date()}, #{userId}, #{method}, #{message}\n"
-      # process.stdout.write "#{new Date()}, #{userId}, #{method}, #{message}\n"
+# process.stdout.write "#{new Date()}, #{userId}, #{method}, #{message}\n"
 
     _emit: (method, connection, userId, err, ret, params...) =>
       if err
@@ -159,21 +156,21 @@ if Meteor.isServer
         throw new Error "logStream may only be set once per job-collection startup/shutdown cycle"
       @logStream = writeStream
       unless not @logStream? or
-             @logStream.write? and
-             typeof @logStream.write is 'function' and
-             @logStream.end? and
-             typeof @logStream.end is 'function'
+        @logStream.write? and
+          typeof @logStream.write is 'function' and
+          @logStream.end? and
+          typeof @logStream.end is 'function'
         throw new Error "logStream must be a valid writable node.js Stream"
 
-    # Register application allow rules
+# Register application allow rules
     allow: (allowOptions) ->
       @allows[type].push(func) for type, func of allowOptions when type of @allows
 
-    # Register application deny rules
+# Register application deny rules
     deny: (denyOptions) ->
       @denys[type].push(func) for type, func of denyOptions when type of @denys
 
-    # Hook function to sanitize documents before validating them in getWork() and getJob()
+# Hook function to sanitize documents before validating them in getWork() and getJob()
     scrub: (job) ->
       job
 
@@ -191,8 +188,7 @@ if Meteor.isServer
         return
       # This looks for zombie running jobs and autofails them
       @find({status: 'running', expiresAfter: { $lt: new Date() }})
-        .forEach (job) =>
-          new Job(@root, job).fail("Failed for exceeding worker set workTimeout");
+        .forEach (job) => new Job(@root, job).fail("Failed for exceeding worker set workTimeout");
       # Change jobs from waiting to ready when their time has come
       # and dependencies have been satisfied
       @readyJobs()
