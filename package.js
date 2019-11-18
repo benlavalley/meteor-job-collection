@@ -6,6 +6,9 @@
 
 var currentVersion = '1.5.3';
 
+Npm.depends({
+  later: '1.2.0',
+});
 Package.describe({
   summary: "A persistent and reactive job queue for Meteor, supporting distributed workers that can run anywhere",
   name: 'vsivsi:job-collection',
@@ -13,7 +16,6 @@ Package.describe({
   git: 'https://github.com/vsivsi/meteor-job-collection.git'
 });
 
-Npm.depends({ later: '1.2.0' });
 
 Package.onUse(function(api) {
   api.use('coffeescript', ['server']);
@@ -26,6 +28,7 @@ Package.onUse(function(api) {
   api.export('JobCollection');
 });
 
+/*
 Package.onTest(function (api) {
   api.use('vsivsi:job-collection@' + currentVersion, ['server','client']);
   // api.use('mrt:later@1.6.1', ['server','client']);
@@ -36,3 +39,4 @@ Package.onTest(function (api) {
   api.use('ddp@1.2.5', 'client');
   api.addFiles('test/job_collection_tests.coffee', ['server', 'client']);
 });
+*/
